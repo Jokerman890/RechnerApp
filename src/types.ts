@@ -1,4 +1,14 @@
-export type View = 'dashboard' | 'claims' | 'details' | 'payment' | 'inventory' | 'sales' | 'settings' | 'calculator';
+export type View = 'dashboard' | 'claims' | 'details' | 'payment' | 'inventory' | 'sales' | 'settings' | 'calculator' | 'customers';
+
+export interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  lastOrder: string;
+  totalSpent: string;
+  avatar: string;
+}
 
 export interface KPI {
   label: string;

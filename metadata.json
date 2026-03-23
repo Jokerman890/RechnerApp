@@ -1,5 +1,5 @@
 {
-  "name": "Liquid Glass Finance",
-  "description": "A high-end financial management and POS system with a sleek dark glass aesthetic.",
-  "requestFramePermissions": []
+  "name": "Liquid Glass Finanzen",
+  "description": "Ein hochwertiges Finanzmanagement- und Kassensystem mit einer eleganten Dark-Glass-Ästhetik.",
+  "requestFramePermissions": ["camera"]
 }
