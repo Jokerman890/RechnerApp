@@ -165,7 +165,7 @@ const Dashboard = ({ setView, t }: { setView: (v: View) => void, t: any }) => (
                 </div>
               </div>
               <p className="font-bold text-3xl tracking-tight mt-2">{kpi.value}</p>
-              <div className={`flex items-center gap-1 mt-1 text-${kpi.color === 'error' ? 'error' : 'tertiary'}`}>
+              <div className={`flex items-center gap-1 mt-1 ${kpi.color === 'error' ? 'text-error' : 'text-tertiary'}`}>
                 <TrendingUp size={14} />
                 <span className="text-xs font-bold">{kpi.trend}</span>
               </div>
