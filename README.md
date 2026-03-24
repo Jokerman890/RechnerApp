@@ -21,6 +21,27 @@ Liquid Glass Finanzen ist ein hochmodernes Finanzmanagement- und Kassensystem (P
 - **Animationen:** Framer Motion für flüssige Übergänge und Interaktionen
 - **Icons:** Lucide React
 - **Build-Tool:** Vite
+- **Backend API:** Express (Node.js)
+
+## 🔐 Umgebungsvariablen (Frontend vs. Backend)
+
+### Frontend (öffentlich)
+
+Nur Variablen mit `VITE_` Prefix dürfen im Frontend verwendet werden, da diese beim Build in den Browser-Code eingebettet werden.
+
+Beispiel:
+
+- `VITE_APP_URL`
+
+### Backend (geheim)
+
+Geheime API-Keys müssen **ohne `VITE_` Prefix** ausschließlich serverseitig liegen.
+
+Beispiel:
+
+- `GEMINI_API_KEY`
+
+> Wichtig: `GEMINI_API_KEY` wird nicht mehr in `vite.config.ts` ins Frontend injiziert.
 
 ## 🚀 Erste Schritte
 
@@ -36,11 +57,24 @@ Liquid Glass Finanzen ist ein hochmodernes Finanzmanagement- und Kassensystem (P
    ```bash
    npm install
    ```
-3. Starten Sie den Entwicklungsserver:
+3. Legen Sie `.env` auf Basis von `.env.example` an und setzen Sie mindestens `GEMINI_API_KEY`.
+4. Starten Sie die App:
    ```bash
    npm run dev
    ```
-4. Öffnen Sie `http://localhost:3000` in Ihrem Browser.
+5. Öffnen Sie `http://localhost:3000` in Ihrem Browser.
+
+## 🧠 Gemini-Anbindung (serverseitig)
+
+Der Client ruft Gemini über den Backend-Endpunkt auf:
+
+- `POST /api/gemini/generate`
+
+Dadurch bleibt der API-Key auf dem Server und wird nie an den Browser ausgeliefert.
+
+## ✅ Start-Validierung für Secrets
+
+Vor `npm run dev` läuft automatisch eine Validierung (`predev`), die den Start abbricht, wenn erforderliche serverseitige Secrets (aktuell `GEMINI_API_KEY`) fehlen.
 
 ## 📱 Design-Philosophie
 
