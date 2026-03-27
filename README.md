@@ -76,6 +76,12 @@ Dadurch bleibt der API-Key auf dem Server und wird nie an den Browser ausgeliefe
 
 Vor `npm run dev` läuft automatisch eine Validierung (`predev`), die den Start abbricht, wenn erforderliche serverseitige Secrets (aktuell `GEMINI_API_KEY`) fehlen.
 
+## 🛡️ Sicherheitshinweise für App-Sperre
+
+- Zugangsdaten (z. B. PINs) dürfen **nicht** fest im Client-Code hinterlegt werden.
+- Biometrische Entsperrung sollte nur über die nativen Plattform-APIs erfolgen, nicht über reine UI-Buttons ohne Verifikation.
+- Falls eine App-Sperre verwendet wird, sollten Fehlversuche begrenzt und sicher protokolliert werden.
+
 ## 📱 Design-Philosophie
 
 Die App nutzt ein **Glassmorphismus-Design**, das durch folgende Elemente geprägt ist:
