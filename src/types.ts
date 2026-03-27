@@ -31,11 +31,9 @@ export interface Activity {
 export interface Claim {
   id: string;
   name: string;
-  status: 'Kritisch' | 'Fällig' | 'Ratenzahlung' | 'Normal';
-  statusDetail: string;
-  amount: string;
-  overdueDays?: number;
-  dueDate?: string;
+  totalAmount: number;
+  paidAmount?: number;
+  dueDate?: string | null;
 }
 
 export interface Product {
