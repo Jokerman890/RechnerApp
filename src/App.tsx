@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { View, KPI, Activity, Claim, Product, CartItem, Customer } from './types';
 import { Language, translations } from './translations';
+import { getDebtMeta } from './debtMeta';
 
 // --- Mock Data ---
 const CUSTOMERS: Customer[] = [
@@ -64,10 +65,10 @@ const ACTIVITIES: Activity[] = [
 ];
 
 const CLAIMS: Claim[] = [
-  { id: '1', name: 'Lukas Müller', status: 'Kritisch', statusDetail: 'Überfällig', amount: '4.200,00€', overdueDays: 42 },
-  { id: '2', name: 'Sarah Schmidt', status: 'Fällig', statusDetail: 'in 3 Tagen', amount: '1.250,00€' },
-  { id: '3', name: 'Felix Wagner', status: 'Normal', statusDetail: 'Fällig am 24.11.', amount: '850,00€' },
-  { id: '4', name: 'Anna Weber', status: 'Ratenzahlung', statusDetail: '(3/6)', amount: '450,00€' },
+  { id: '1', name: 'Lukas Müller', totalAmount: 4200, paidAmount: 654.5, dueDate: '2026-03-25' },
+  { id: '2', name: 'Sarah Schmidt', totalAmount: 1250, paidAmount: 0, dueDate: '2026-03-29' },
+  { id: '3', name: 'Felix Wagner', totalAmount: 850, paidAmount: 0, dueDate: null },
+  { id: '4', name: 'Anna Weber', totalAmount: 450, paidAmount: 450, dueDate: '2026-03-21' },
 ];
 
 const PRODUCTS: Product[] = [
@@ -224,8 +225,26 @@ const Dashboard = ({ setView, t }: { setView: (v: View) => void, t: any }) => (
   </div>
 );
 
-const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => (
-  <div className="flex flex-col gap-8 pb-32">
+const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => {
+  const numberFormatter = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+  const today = new Date();
+  const claimsWithMeta = CLAIMS.map((claim) => ({
+    claim,
+    meta: getDebtMeta(
+      {
+        totalAmount: claim.totalAmount ?? 0,
+        paidAmount: claim.paidAmount ?? 0,
+        dueDate: claim.dueDate ?? null,
+      },
+      today
+    ),
+  }));
+  const todayOverdue = claimsWithMeta.filter(({ meta }) => meta.isOpen && meta.isOverdue).length;
+  const dueThisWeek = claimsWithMeta.filter(({ meta }) => meta.isOpen && meta.isDueThisWeek && !meta.isOverdue).length;
+  const totalOpen = claimsWithMeta.reduce((sum, { meta }) => sum + meta.openAmount, 0);
+
+  return (
+    <div className="flex flex-col gap-8 pb-32">
     <header className="sticky top-0 z-50 glass-panel border-b px-6 py-4 flex items-center justify-between">
       <div className="flex items-center gap-4">
         <div className="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/15 overflow-hidden">
@@ -263,6 +282,20 @@ const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: 
       </section>
 
       <section className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/15">
+            <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">Heute überfällig</p>
+            <p className="text-2xl font-bold mt-1">{todayOverdue}</p>
+          </div>
+          <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/15">
+            <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">Diese Woche fällig</p>
+            <p className="text-2xl font-bold mt-1">{dueThisWeek}</p>
+          </div>
+          <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/15">
+            <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">Total offen</p>
+            <p className="text-2xl font-bold mt-1">{numberFormatter.format(totalOpen)}</p>
+          </div>
+        </div>
         <div className="flex items-center justify-between border-b border-outline-variant/15 pb-4">
           <h3 className="text-2xl font-bold">{t.open_claims}</h3>
           <button className="px-4 py-2 rounded-full glass-panel text-sm font-medium flex items-center gap-2">
@@ -270,33 +303,32 @@ const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: 
           </button>
         </div>
         <div className="flex flex-col gap-4">
-          {CLAIMS.map((claim) => (
+          {claimsWithMeta.map(({ claim, meta }) => (
             <div 
               key={claim.id} 
               onClick={() => setView('details')}
               className="bg-surface-container rounded-lg p-5 border border-outline-variant/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors"
             >
-              <div className={`absolute left-0 top-0 bottom-0 w-1 ${claim.status === 'Kritisch' ? 'bg-error' : claim.status === 'Fällig' ? 'bg-tertiary' : 'bg-outline-variant'}`} />
+              <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.urgency === 'overdue' ? 'bg-error' : meta.urgency === 'today' || meta.urgency === 'soon' ? 'bg-tertiary' : 'bg-outline-variant'}`} />
               <div className="flex items-center gap-4 pl-2">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${claim.status === 'Kritisch' ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                  {claim.status === 'Kritisch' ? <Receipt size={24} /> : <Users size={24} />}
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${meta.urgency === 'overdue' ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant'}`}>
+                  {meta.urgency === 'overdue' ? <Receipt size={24} /> : <Users size={24} />}
                 </div>
                 <div>
                   <h4 className="text-lg font-bold">{claim.name}</h4>
                   <div className="flex items-center gap-2 text-sm mt-1">
-                    <span className={`font-medium px-2 py-0.5 rounded-sm ${claim.status === 'Kritisch' ? 'bg-error/20 text-error' : claim.status === 'Fällig' ? 'bg-tertiary/20 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                      {claim.status} {claim.statusDetail}
+                    <span className={`font-medium px-2 py-0.5 rounded-sm ${meta.urgency === 'overdue' ? 'bg-error/20 text-error' : meta.urgency === 'today' || meta.urgency === 'soon' ? 'bg-tertiary/20 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
+                      {meta.statusLabel} • {meta.dueDetail}
                     </span>
-                    {claim.overdueDays && <span className="text-on-surface-variant text-xs">• seit {claim.overdueDays} Tagen</span>}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
                 <div className="text-right">
-                  <p className="text-xl font-bold">{claim.amount}</p>
+                  <p className="text-xl font-bold">{numberFormatter.format(meta.openAmount)}</p>
                   <p className="text-xs text-on-surface-variant uppercase tracking-wider mt-1">{t.pending}</p>
                 </div>
-                {claim.status === 'Kritisch' || claim.status === 'Fällig' ? (
+                {meta.urgency === 'overdue' || meta.urgency === 'today' || meta.urgency === 'soon' ? (
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -316,7 +348,8 @@ const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: 
       </section>
     </main>
   </div>
-);
+  );
+};
 
 const DebtDetails = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => (
   <div className="flex flex-col min-h-screen relative overflow-x-hidden">
