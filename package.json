@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "tsx --test src/debt.test.ts",
     "predev": "node server/validate-env.mjs",
     "start": "node server/index.mjs"
   },

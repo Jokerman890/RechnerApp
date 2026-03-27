@@ -42,8 +42,9 @@ import {
   Camera,
   Upload
 } from 'lucide-react';
-import { View, KPI, Activity, Claim, Product, CartItem, Customer } from './types';
+import { View, KPI, Activity, Product, CartItem, Customer } from './types';
 import { Language, translations } from './translations';
+import { Debt, formatEuroFromCents, getDebtMeta } from './debt';
 
 // --- Mock Data ---
 const CUSTOMERS: Customer[] = [
@@ -63,11 +64,11 @@ const ACTIVITIES: Activity[] = [
   { id: '2', title: 'Neue Buchung erstellt', subtitle: 'Kunde: Max Mustermann', amount: '450,20€', time: 'Vor 5 Std.', icon: 'plus', color: 'primary' },
 ];
 
-const CLAIMS: Claim[] = [
-  { id: '1', name: 'Lukas Müller', status: 'Kritisch', statusDetail: 'Überfällig', amount: '4.200,00€', overdueDays: 42 },
-  { id: '2', name: 'Sarah Schmidt', status: 'Fällig', statusDetail: 'in 3 Tagen', amount: '1.250,00€' },
-  { id: '3', name: 'Felix Wagner', status: 'Normal', statusDetail: 'Fällig am 24.11.', amount: '850,00€' },
-  { id: '4', name: 'Anna Weber', status: 'Ratenzahlung', statusDetail: '(3/6)', amount: '450,00€' },
+const DEBTS: Debt[] = [
+  { id: '1', name: 'Lukas Müller', amountCents: 420000, dueDate: '2026-03-20' },
+  { id: '2', name: 'Sarah Schmidt', amountCents: 125000, dueDate: '2026-03-27' },
+  { id: '3', name: 'Felix Wagner', amountCents: 85000, dueDate: '2026-03-30' },
+  { id: '4', name: 'Anna Weber', amountCents: 90000, paidCents: 45000 },
 ];
 
 const PRODUCTS: Product[] = [
@@ -224,99 +225,127 @@ const Dashboard = ({ setView, t }: { setView: (v: View) => void, t: any }) => (
   </div>
 );
 
-const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => (
-  <div className="flex flex-col gap-8 pb-32">
-    <header className="sticky top-0 z-50 glass-panel border-b px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/15 overflow-hidden">
-          <img src="https://picsum.photos/seed/user/100" alt="Benutzer" className="w-full h-full object-cover" />
-        </div>
-        <h1 className="text-xl font-bold tracking-tight">{t.claims}</h1>
-      </div>
-      <button className="w-10 h-10 rounded-full glass-panel flex items-center justify-center">
-        <Bell size={20} />
-      </button>
-    </header>
+const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => {
+  const today = new Date();
 
-    <main className="px-6 flex flex-col gap-10">
-      <section className="bg-surface-container-low rounded-xl p-8 border border-outline-variant/15 relative overflow-hidden">
-        <div className="absolute -top-24 -right-24 w-64 h-64 bg-primary/10 rounded-full blur-[80px]" />
-        <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
-          <div className="text-center md:text-left">
-            <p className="text-on-surface-variant text-sm font-medium uppercase tracking-widest mb-2">{t.total_overview}</p>
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tighter">12.450,00€</h2>
-          </div>
-          <div className="w-full md:w-1/2 space-y-4">
-            <div className="flex justify-between items-end">
-              <span className="font-medium text-lg">{t.repayment_rate}</span>
-              <span className="text-tertiary font-bold text-xl">65%</span>
-            </div>
-            <div className="h-4 bg-surface-container-highest rounded-full overflow-hidden border border-outline-variant/15 relative">
-              <div className="absolute top-0 left-0 h-full liquid-gradient rounded-full w-[65%]" />
-            </div>
-            <div className="flex justify-between text-sm text-on-surface-variant">
-              <span>8.092,50€ {t.received}</span>
-              <span>4.357,50€ {t.pending}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+  const debtRows = DEBTS.map((debt) => ({ debt, meta: getDebtMeta(debt, today) }))
+    .sort((a, b) => a.meta.priority - b.meta.priority);
 
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-outline-variant/15 pb-4">
-          <h3 className="text-2xl font-bold">{t.open_claims}</h3>
-          <button className="px-4 py-2 rounded-full glass-panel text-sm font-medium flex items-center gap-2">
-            <Search size={16} /> {t.filter}
-          </button>
+  const overdueTodayCount = debtRows.filter((row) => row.meta.urgency === 'overdue').length;
+  const dueThisWeekCount = debtRows.filter((row) => row.meta.daysUntilDue !== null && row.meta.daysUntilDue >= 0 && row.meta.daysUntilDue <= 6).length;
+  const totalOpenCents = debtRows.reduce((sum, row) => sum + row.meta.openCents, 0);
+
+  return (
+    <div className="flex flex-col gap-8 pb-32">
+      <header className="sticky top-0 z-50 glass-panel border-b px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/15 overflow-hidden">
+            <img src="https://picsum.photos/seed/user/100" alt="Benutzer" className="w-full h-full object-cover" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">{t.claims}</h1>
         </div>
-        <div className="flex flex-col gap-4">
-          {CLAIMS.map((claim) => (
-            <div 
-              key={claim.id} 
-              onClick={() => setView('details')}
-              className="bg-surface-container rounded-lg p-5 border border-outline-variant/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors"
-            >
-              <div className={`absolute left-0 top-0 bottom-0 w-1 ${claim.status === 'Kritisch' ? 'bg-error' : claim.status === 'Fällig' ? 'bg-tertiary' : 'bg-outline-variant'}`} />
-              <div className="flex items-center gap-4 pl-2">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${claim.status === 'Kritisch' ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                  {claim.status === 'Kritisch' ? <Receipt size={24} /> : <Users size={24} />}
-                </div>
-                <div>
-                  <h4 className="text-lg font-bold">{claim.name}</h4>
-                  <div className="flex items-center gap-2 text-sm mt-1">
-                    <span className={`font-medium px-2 py-0.5 rounded-sm ${claim.status === 'Kritisch' ? 'bg-error/20 text-error' : claim.status === 'Fällig' ? 'bg-tertiary/20 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                      {claim.status} {claim.statusDetail}
-                    </span>
-                    {claim.overdueDays && <span className="text-on-surface-variant text-xs">• seit {claim.overdueDays} Tagen</span>}
+        <button className="w-10 h-10 rounded-full glass-panel flex items-center justify-center">
+          <Bell size={20} />
+        </button>
+      </header>
+
+      <main className="px-6 flex flex-col gap-10">
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold">Mini-Dashboard</h3>
+            <span className="text-xs uppercase tracking-wider text-on-surface-variant">Operativer Fokus</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low p-4">
+              <p className="text-xs uppercase tracking-wider text-on-surface-variant mb-2">Heute überfällig</p>
+              <p className="text-3xl font-bold">{overdueTodayCount}</p>
+            </div>
+            <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low p-4">
+              <p className="text-xs uppercase tracking-wider text-on-surface-variant mb-2">Diese Woche fällig</p>
+              <p className="text-3xl font-bold">{dueThisWeekCount}</p>
+            </div>
+            <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low p-4">
+              <p className="text-xs uppercase tracking-wider text-on-surface-variant mb-2">Total offen</p>
+              <p className="text-2xl font-bold">{formatEuroFromCents(totalOpenCents)}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b border-outline-variant/15 pb-4">
+            <h3 className="text-2xl font-bold">{t.open_claims}</h3>
+            <button className="px-4 py-2 rounded-full glass-panel text-sm font-medium flex items-center gap-2">
+              <Search size={16} /> {t.filter}
+            </button>
+          </div>
+          <div className="flex flex-col gap-4">
+            {debtRows.map(({ debt, meta }) => {
+              const badgeLabel =
+                meta.urgency === 'overdue'
+                  ? 'Kritisch · Überfällig'
+                  : meta.urgency === 'dueToday'
+                    ? 'Fällig · Heute'
+                    : meta.urgency === 'dueSoon'
+                      ? `Fällig · in ${meta.daysUntilDue} Tagen`
+                      : meta.paymentStatus === 'partial'
+                        ? 'Ratenzahlung'
+                        : 'Normal';
+
+              const showReminder = meta.urgency === 'overdue' || meta.urgency === 'dueToday' || meta.urgency === 'dueSoon';
+              const badgeCritical = meta.urgency === 'overdue';
+              const badgeDue = meta.urgency === 'dueToday' || meta.urgency === 'dueSoon';
+
+              return (
+                <div
+                  key={debt.id}
+                  onClick={() => setView('details')}
+                  className="bg-surface-container rounded-lg p-5 border border-outline-variant/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors"
+                >
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${badgeCritical ? 'bg-error' : badgeDue ? 'bg-tertiary' : 'bg-outline-variant'}`} />
+                  <div className="flex items-center gap-4 pl-2">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${badgeCritical ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant'}`}>
+                      {badgeCritical ? <Receipt size={24} /> : <Users size={24} />}
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-bold">{debt.name}</h4>
+                      <div className="flex items-center gap-2 text-sm mt-1">
+                        <span className={`font-medium px-2 py-0.5 rounded-sm ${badgeCritical ? 'bg-error/20 text-error' : badgeDue ? 'bg-tertiary/20 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
+                          {badgeLabel}
+                        </span>
+                        {meta.urgency === 'overdue' && meta.daysUntilDue !== null && (
+                          <span className="text-on-surface-variant text-xs">• seit {Math.abs(meta.daysUntilDue)} Tagen</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
+                    <div className="text-right">
+                      <p className="text-xl font-bold">{formatEuroFromCents(meta.openCents)}</p>
+                      <p className="text-xs text-on-surface-variant uppercase tracking-wider mt-1">{t.pending}</p>
+                    </div>
+                    {showReminder ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          showToast(t.reminder_sent);
+                        }}
+                        className="liquid-gradient px-6 py-2.5 rounded-full font-bold text-sm shadow-lg active:scale-95 transition-transform"
+                      >
+                        {t.send_reminder}
+                      </button>
+                    ) : (
+                      <button className="glass-panel px-6 py-2.5 rounded-full font-bold text-sm">{t.details}</button>
+                    )}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
-                <div className="text-right">
-                  <p className="text-xl font-bold">{claim.amount}</p>
-                  <p className="text-xs text-on-surface-variant uppercase tracking-wider mt-1">{t.pending}</p>
-                </div>
-                {claim.status === 'Kritisch' || claim.status === 'Fällig' ? (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      showToast(t.reminder_sent);
-                    }}
-                    className="liquid-gradient px-6 py-2.5 rounded-full font-bold text-sm shadow-lg active:scale-95 transition-transform"
-                  >
-                    {t.send_reminder}
-                  </button>
-                ) : (
-                  <button className="glass-panel px-6 py-2.5 rounded-full font-bold text-sm">{t.details}</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
-  </div>
-);
+              );
+            })}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+};
 
 const DebtDetails = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => (
   <div className="flex flex-col min-h-screen relative overflow-x-hidden">
