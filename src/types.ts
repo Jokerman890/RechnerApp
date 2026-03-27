@@ -31,11 +31,14 @@ export interface Activity {
 export interface Claim {
   id: string;
   name: string;
-  status: 'Kritisch' | 'Fällig' | 'Ratenzahlung' | 'Normal';
-  statusDetail: string;
-  amount: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  dueDate?: string | null;
+  // legacy display fields kept optional for backwards compatibility in existing mocks/views
+  status?: 'Kritisch' | 'Fällig' | 'Ratenzahlung' | 'Normal';
+  statusDetail?: string;
+  amount?: string;
   overdueDays?: number;
-  dueDate?: string;
 }
 
 export interface Product {

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "test": "node --import tsx --test src/debtMeta.test.ts",
     "lint": "tsc --noEmit",
     "predev": "node server/validate-env.mjs",
     "start": "node server/index.mjs"
