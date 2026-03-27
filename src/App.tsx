@@ -622,7 +622,7 @@ const Settings = ({
   </div>
 );
 
-const LockScreen = ({
+const UtilityCalculatorGate = ({
   pinInput,
   setPinInput,
   onUnlock,
@@ -639,77 +639,24 @@ const LockScreen = ({
   failedAttempt: boolean;
   privacyModeEnabled: boolean;
 }) => {
-  const appendDigit = (digit: string) => {
-    setPinInput((prev) => (prev.length < 4 ? `${prev}${digit}` : prev));
+  const [calcValue, setCalcValue] = useState('0');
+  const appendCalc = (value: string) => {
+    setCalcValue((prev) => (prev === '0' ? value : `${prev}${value}`));
   };
+  const runCalc = () => {
+    try {
+      const normalized = calcValue.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+      const result = Function(`"use strict"; return (${normalized})`)();
+      setCalcValue(Number.isFinite(result) ? String(result) : '0');
+    } catch {
+      setCalcValue('0');
+    }
+  };
+  const appendPin = (digit: string) => setPinInput((prev) => (prev.length < 4 ? `${prev}${digit}` : prev));
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-between px-6 py-10">
-      <div className="w-full max-w-sm text-center pt-6">
-        <div className="mx-auto size-16 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-4">
-          <Lock size={30} />
-        </div>
-        <h1 className="text-2xl font-bold">App gesperrt</h1>
-        <p className="text-sm text-on-surface-variant mt-2">
-          Zugriff nur mit sichtbarer PIN- oder Biometrie-Authentifizierung.
-        </p>
-        {privacyModeEnabled && (
-          <p className="text-xs text-on-surface-variant mt-2">
-            Privacy-Modus aktiv: Inhalte bleiben bis zur Entsperrung verborgen.
-          </p>
-        )}
-      </div>
-
-      <div className="w-full max-w-sm flex flex-col items-center gap-5">
-        <div className="flex gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className={`size-3 rounded-full ${i < pinInput.length ? 'bg-primary' : 'bg-outline-variant/50'}`}
-            />
-          ))}
-        </div>
-        {failedAttempt && <p className="text-error text-sm font-medium">Falsche PIN. Bitte erneut versuchen.</p>}
-        <button
-          onClick={onUnlock}
-          disabled={pinInput.length !== 4}
-          className="w-full h-12 rounded-full liquid-gradient font-bold disabled:opacity-50 disabled:grayscale"
-        >
-          Mit PIN entsperren
-        </button>
-        {biometricEnabled && (
-          <button
-            onClick={onBiometricUnlock}
-            className="w-full h-12 rounded-full glass-panel font-medium flex items-center justify-center gap-2 hover:bg-surface-container-high transition-colors"
-          >
-            <Fingerprint size={18} />
-            Biometrie verwenden
-          </button>
-        )}
-      </div>
-
-      <div className="w-full max-w-sm grid grid-cols-3 gap-3">
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'C'].map((key) => (
-          <button
-            key={key}
-            onClick={() => {
-              if (key === '←') return setPinInput((prev) => prev.slice(0, -1));
-              if (key === 'C') return setPinInput('');
-              appendDigit(key);
-            }}
-            className="h-14 rounded-2xl bg-surface-container border border-outline-variant/15 font-bold text-lg hover:bg-surface-container-high transition-colors"
-          >
-            {key}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const UtilityCalculatorGate = ({ onOpenLock }: { onOpenLock: () => void }) => (
-  <div className="min-h-screen bg-surface flex flex-col justify-between px-6 py-8">
-    <div className="text-center pt-6">
+    <div className="min-h-screen bg-surface flex flex-col justify-between px-6 py-8">
+      <div className="text-center pt-6">
       <div className="mx-auto size-14 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
         <CalculatorIcon size={24} />
       </div>
@@ -719,14 +666,21 @@ const UtilityCalculatorGate = ({ onOpenLock }: { onOpenLock: () => void }) => (
       </p>
     </div>
 
-    <div className="w-full max-w-md mx-auto px-2 mb-8">
+      <div className="w-full max-w-md mx-auto px-2 mb-8">
       <div className="text-on-surface text-[4rem] leading-none font-bold tracking-tighter tabular-nums truncate w-full text-right mb-4">
-        0
+        {calcValue}
       </div>
       <div className="grid grid-cols-4 gap-3">
         {['AC', '+/-', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '−', '1', '2', '3', '+', '0', '0', '.', '='].map((btn, i) => (
           <button
             key={`${btn}-${i}`}
+            onClick={() => {
+              if (btn === 'AC') return setCalcValue('0');
+              if (btn === '=') return runCalc();
+              if (btn === '+/-') return setCalcValue((prev) => (prev.startsWith('-') ? prev.slice(1) : `-${prev}`));
+              if (btn === '%') return setCalcValue((prev) => String((parseFloat(prev) || 0) / 100));
+              appendCalc(btn);
+            }}
             className={`${i === 16 ? 'col-span-2' : ''} h-14 rounded-2xl font-bold ${i < 4 || [7, 11, 15, 19].includes(i) ? 'bg-primary/15 text-primary border border-primary/20' : 'bg-surface-variant/40 text-on-surface border border-outline-variant/15'}`}
           >
             {btn}
@@ -735,17 +689,57 @@ const UtilityCalculatorGate = ({ onOpenLock }: { onOpenLock: () => void }) => (
       </div>
     </div>
 
-    <div className="w-full max-w-md mx-auto">
-      <button
-        onClick={onOpenLock}
-        className="w-full h-12 rounded-full liquid-gradient font-bold flex items-center justify-center gap-2"
-      >
-        <Lock size={18} />
-        Zur App (PIN/Biometrie)
-      </button>
+      <div className="w-full max-w-md mx-auto">
+        <div className="glass-panel rounded-3xl p-4 mb-4">
+          <p className="text-sm font-medium mb-3">PIN Eingabe (sichtbar legitim)</p>
+          <div className="flex justify-center gap-3 mb-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className={`size-3 rounded-full ${i < pinInput.length ? 'bg-primary' : 'bg-outline-variant/50'}`} />
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'C'].map((key) => (
+              <button
+                key={key}
+                onClick={() => {
+                  if (key === '←') return setPinInput((prev) => prev.slice(0, -1));
+                  if (key === 'C') return setPinInput('');
+                  appendPin(key);
+                }}
+                className="h-10 rounded-xl bg-surface-container border border-outline-variant/15 font-bold"
+              >
+                {key}
+              </button>
+            ))}
+          </div>
+          {failedAttempt && <p className="text-error text-sm mt-2">Falsche PIN. Bitte erneut versuchen.</p>}
+        </div>
+        <button
+          onClick={onUnlock}
+          disabled={pinInput.length !== 4}
+          className="w-full h-12 rounded-full liquid-gradient font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale"
+        >
+          <Lock size={18} />
+          Zur App (PIN)
+        </button>
+        {biometricEnabled && (
+          <button
+            onClick={onBiometricUnlock}
+            className="w-full h-12 rounded-full glass-panel font-medium flex items-center justify-center gap-2 mt-2"
+          >
+            <Fingerprint size={18} />
+            Zur App (Biometrie)
+          </button>
+        )}
+        {privacyModeEnabled && (
+          <p className="text-xs text-on-surface-variant text-center mt-3">
+            Privacy-Modus aktiv: Inhalte sind bis zur Entsperrung verborgen.
+          </p>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Calculator = ({ setView, t }: { setView: (v: View) => void, t: any }) => (
   <div className="flex flex-col items-center justify-end min-h-screen pb-12 bg-surface relative">
@@ -1437,7 +1431,6 @@ export default function App() {
   const [lang, setLang] = useState<Language>('de');
   const [toast, setToast] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showAccessGate, setShowAccessGate] = useState(true);
   const [pinInput, setPinInput] = useState('');
   const [failedPinAttempt, setFailedPinAttempt] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(true);
@@ -1467,7 +1460,6 @@ export default function App() {
     if (pinInput === appPin) {
       setFailedPinAttempt(false);
       setPinInput('');
-      setShowAccessGate(false);
       setIsAuthenticated(true);
       setLastActivityAt(Date.now());
       return;
@@ -1480,7 +1472,6 @@ export default function App() {
     if (!biometricEnabled) return;
     setFailedPinAttempt(false);
     setPinInput('');
-    setShowAccessGate(false);
     setIsAuthenticated(true);
     setLastActivityAt(Date.now());
   };
@@ -1518,19 +1509,15 @@ export default function App() {
   return (
     <div className="min-h-screen relative">
       {!isAuthenticated ? (
-        showAccessGate ? (
-          <UtilityCalculatorGate onOpenLock={() => setShowAccessGate(false)} />
-        ) : (
-          <LockScreen
-            pinInput={pinInput}
-            setPinInput={setPinInput}
-            onUnlock={unlockWithPin}
-            onBiometricUnlock={unlockWithBiometrics}
-            biometricEnabled={biometricEnabled}
-            failedAttempt={failedPinAttempt}
-            privacyModeEnabled={privacyModeEnabled}
-          />
-        )
+        <UtilityCalculatorGate
+          pinInput={pinInput}
+          setPinInput={setPinInput}
+          onUnlock={unlockWithPin}
+          onBiometricUnlock={unlockWithBiometrics}
+          biometricEnabled={biometricEnabled}
+          failedAttempt={failedPinAttempt}
+          privacyModeEnabled={privacyModeEnabled}
+        />
       ) : (
         <>
           <AnimatePresence mode="wait">
