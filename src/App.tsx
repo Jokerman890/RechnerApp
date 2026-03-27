@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutGrid, 
@@ -485,7 +485,35 @@ const PaymentProcess = ({ setView, amount, t }: { setView: (v: View) => void, am
   </div>
 );
 
-const Settings = ({ setView, lang, setLang, t }: { setView: (v: View) => void, lang: Language, setLang: (l: Language) => void, t: any }) => (
+const Settings = ({
+  setView,
+  lang,
+  setLang,
+  t,
+  biometricEnabled,
+  setBiometricEnabled,
+  autoLockEnabled,
+  setAutoLockEnabled,
+  backgroundLockEnabled,
+  setBackgroundLockEnabled,
+  privacyModeEnabled,
+  setPrivacyModeEnabled,
+  onLockNow,
+}: {
+  setView: (v: View) => void;
+  lang: Language;
+  setLang: (l: Language) => void;
+  t: any;
+  biometricEnabled: boolean;
+  setBiometricEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  autoLockEnabled: boolean;
+  setAutoLockEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  backgroundLockEnabled: boolean;
+  setBackgroundLockEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  privacyModeEnabled: boolean;
+  setPrivacyModeEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  onLockNow: () => void;
+}) => (
   <div className="flex flex-col min-h-screen pb-24">
     <header className="flex items-center justify-between p-6 bg-surface-dim/80 backdrop-blur-md sticky top-0 z-50">
       <button onClick={() => setView('dashboard')} className="w-12 h-12 rounded-full glass-panel flex items-center justify-center hover:bg-surface-container transition-colors">
@@ -500,7 +528,7 @@ const Settings = ({ setView, lang, setLang, t }: { setView: (v: View) => void, l
     <main className="px-6 space-y-8 max-w-2xl mx-auto w-full">
       <section className="mt-4 text-center space-y-2">
         <h2 className="text-4xl font-bold tracking-tight primary-gradient-text">{t.security_profile}</h2>
-        <p className="text-on-surface-variant font-medium">{t.manage_vault_settings}</p>
+        <p className="text-on-surface-variant font-medium">Sichtbare Sicherheits- und Zugangsregeln</p>
       </section>
 
       <section className="glass-panel p-2 rounded-2xl">
@@ -522,9 +550,38 @@ const Settings = ({ setView, lang, setLang, t }: { setView: (v: View) => void, l
         <h3 className="px-4 pt-4 pb-2 text-[10px] font-extrabold uppercase tracking-widest text-on-surface-variant">{t.security}</h3>
         <div className="space-y-2">
           {[
-            { label: t.change_pin, sub: t.update_master_pin, icon: Lock, color: 'primary' },
-            { label: t.biometrics, sub: 'Face ID / Touch ID', icon: Fingerprint, color: 'tertiary', hasSwitch: true },
-            { label: t.auto_lock, sub: t.lock_after_5_min, icon: Timer, color: 'on-surface' },
+            {
+              label: t.biometrics,
+              sub: 'Optional aktivierbar',
+              icon: Fingerprint,
+              color: 'tertiary',
+              enabled: biometricEnabled,
+              onToggle: () => setBiometricEnabled((prev) => !prev),
+            },
+            {
+              label: t.auto_lock,
+              sub: 'Sperrt nach 5 Minuten Inaktivität',
+              icon: Timer,
+              color: 'on-surface',
+              enabled: autoLockEnabled,
+              onToggle: () => setAutoLockEnabled((prev) => !prev),
+            },
+            {
+              label: 'Background-Lock',
+              sub: 'Sperrt beim Wechsel in den Hintergrund',
+              icon: Lock,
+              color: 'primary',
+              enabled: backgroundLockEnabled,
+              onToggle: () => setBackgroundLockEnabled((prev) => !prev),
+            },
+            {
+              label: 'Privacy-Modus',
+              sub: 'Blendet Inhalte bis zur Entsperrung aus',
+              icon: EyeOff,
+              color: 'secondary',
+              enabled: privacyModeEnabled,
+              onToggle: () => setPrivacyModeEnabled((prev) => !prev),
+            },
           ].map((item, i) => (
             <div key={i} className="bg-surface-container rounded-xl flex items-center justify-between p-4 cursor-pointer hover:bg-surface-container-high transition-colors">
               <div className="flex items-center gap-4">
@@ -536,19 +593,25 @@ const Settings = ({ setView, lang, setLang, t }: { setView: (v: View) => void, l
                   <p className="text-sm text-on-surface-variant">{item.sub}</p>
                 </div>
               </div>
-              {item.hasSwitch ? (
-                <div className="w-14 h-7 bg-primary rounded-full relative">
-                  <div className="absolute right-1 top-1 w-5 h-5 bg-white rounded-full" />
-                </div>
-              ) : (
-                <ChevronRight size={20} className="text-outline" />
-              )}
+              <button
+                onClick={item.onToggle}
+                className={`w-14 h-7 rounded-full relative ${item.enabled ? 'bg-primary' : 'bg-outline-variant/40'}`}
+              >
+                <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${item.enabled ? 'right-1' : 'left-1'}`} />
+              </button>
             </div>
           ))}
         </div>
       </section>
 
       <div className="pt-4 flex flex-col items-center gap-4">
+        <button
+          onClick={onLockNow}
+          className="px-8 py-4 rounded-full glass-panel text-primary flex items-center gap-2 hover:bg-surface-variant/60 transition-all shadow-lg"
+        >
+          <Lock size={20} />
+          <span className="font-bold">Jetzt sperren</span>
+        </button>
         <button className="px-8 py-4 rounded-full glass-panel text-error flex items-center gap-2 hover:bg-surface-variant/60 transition-all shadow-lg">
           <LogOut size={20} />
           <span className="font-bold">{t.logout}</span>
@@ -556,6 +619,131 @@ const Settings = ({ setView, lang, setLang, t }: { setView: (v: View) => void, l
         <p className="text-[10px] text-on-surface-variant/40 font-bold tracking-widest uppercase">v1.4.0</p>
       </div>
     </main>
+  </div>
+);
+
+const LockScreen = ({
+  pinInput,
+  setPinInput,
+  onUnlock,
+  onBiometricUnlock,
+  biometricEnabled,
+  failedAttempt,
+  privacyModeEnabled,
+}: {
+  pinInput: string;
+  setPinInput: React.Dispatch<React.SetStateAction<string>>;
+  onUnlock: () => void;
+  onBiometricUnlock: () => void;
+  biometricEnabled: boolean;
+  failedAttempt: boolean;
+  privacyModeEnabled: boolean;
+}) => {
+  const appendDigit = (digit: string) => {
+    setPinInput((prev) => (prev.length < 4 ? `${prev}${digit}` : prev));
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-between px-6 py-10">
+      <div className="w-full max-w-sm text-center pt-6">
+        <div className="mx-auto size-16 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-4">
+          <Lock size={30} />
+        </div>
+        <h1 className="text-2xl font-bold">App gesperrt</h1>
+        <p className="text-sm text-on-surface-variant mt-2">
+          Zugriff nur mit sichtbarer PIN- oder Biometrie-Authentifizierung.
+        </p>
+        {privacyModeEnabled && (
+          <p className="text-xs text-on-surface-variant mt-2">
+            Privacy-Modus aktiv: Inhalte bleiben bis zur Entsperrung verborgen.
+          </p>
+        )}
+      </div>
+
+      <div className="w-full max-w-sm flex flex-col items-center gap-5">
+        <div className="flex gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className={`size-3 rounded-full ${i < pinInput.length ? 'bg-primary' : 'bg-outline-variant/50'}`}
+            />
+          ))}
+        </div>
+        {failedAttempt && <p className="text-error text-sm font-medium">Falsche PIN. Bitte erneut versuchen.</p>}
+        <button
+          onClick={onUnlock}
+          disabled={pinInput.length !== 4}
+          className="w-full h-12 rounded-full liquid-gradient font-bold disabled:opacity-50 disabled:grayscale"
+        >
+          Mit PIN entsperren
+        </button>
+        {biometricEnabled && (
+          <button
+            onClick={onBiometricUnlock}
+            className="w-full h-12 rounded-full glass-panel font-medium flex items-center justify-center gap-2 hover:bg-surface-container-high transition-colors"
+          >
+            <Fingerprint size={18} />
+            Biometrie verwenden
+          </button>
+        )}
+      </div>
+
+      <div className="w-full max-w-sm grid grid-cols-3 gap-3">
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'C'].map((key) => (
+          <button
+            key={key}
+            onClick={() => {
+              if (key === '←') return setPinInput((prev) => prev.slice(0, -1));
+              if (key === 'C') return setPinInput('');
+              appendDigit(key);
+            }}
+            className="h-14 rounded-2xl bg-surface-container border border-outline-variant/15 font-bold text-lg hover:bg-surface-container-high transition-colors"
+          >
+            {key}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const UtilityCalculatorGate = ({ onOpenLock }: { onOpenLock: () => void }) => (
+  <div className="min-h-screen bg-surface flex flex-col justify-between px-6 py-8">
+    <div className="text-center pt-6">
+      <div className="mx-auto size-14 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
+        <CalculatorIcon size={24} />
+      </div>
+      <h1 className="text-2xl font-bold">Taschenrechner</h1>
+      <p className="text-sm text-on-surface-variant mt-2">
+        Offene Utility-Funktion. Der Zugang zur Haupt-App erfolgt sichtbar über den Button unten.
+      </p>
+    </div>
+
+    <div className="w-full max-w-md mx-auto px-2 mb-8">
+      <div className="text-on-surface text-[4rem] leading-none font-bold tracking-tighter tabular-nums truncate w-full text-right mb-4">
+        0
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        {['AC', '+/-', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '−', '1', '2', '3', '+', '0', '0', '.', '='].map((btn, i) => (
+          <button
+            key={`${btn}-${i}`}
+            className={`${i === 16 ? 'col-span-2' : ''} h-14 rounded-2xl font-bold ${i < 4 || [7, 11, 15, 19].includes(i) ? 'bg-primary/15 text-primary border border-primary/20' : 'bg-surface-variant/40 text-on-surface border border-outline-variant/15'}`}
+          >
+            {btn}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div className="w-full max-w-md mx-auto">
+      <button
+        onClick={onOpenLock}
+        className="w-full h-12 rounded-full liquid-gradient font-bold flex items-center justify-center gap-2"
+      >
+        <Lock size={18} />
+        Zur App (PIN/Biometrie)
+      </button>
+    </div>
   </div>
 );
 
@@ -1248,6 +1436,18 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>(PRODUCTS);
   const [lang, setLang] = useState<Language>('de');
   const [toast, setToast] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showAccessGate, setShowAccessGate] = useState(true);
+  const [pinInput, setPinInput] = useState('');
+  const [failedPinAttempt, setFailedPinAttempt] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(true);
+  const [autoLockEnabled, setAutoLockEnabled] = useState(true);
+  const [backgroundLockEnabled, setBackgroundLockEnabled] = useState(true);
+  const [privacyModeEnabled, setPrivacyModeEnabled] = useState(true);
+  const [lastActivityAt, setLastActivityAt] = useState<number>(Date.now());
+  const appPin = '1234';
+  const autoLockMs = useMemo(() => 5 * 60 * 1000, []);
+  const relockTimer = useRef<number | null>(null);
 
   const t = translations[lang];
 
@@ -1256,45 +1456,138 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const lockApp = () => {
+    setIsAuthenticated(false);
+    setPinInput('');
+    setFailedPinAttempt(false);
+    setView('dashboard');
+  };
+
+  const unlockWithPin = () => {
+    if (pinInput === appPin) {
+      setFailedPinAttempt(false);
+      setPinInput('');
+      setShowAccessGate(false);
+      setIsAuthenticated(true);
+      setLastActivityAt(Date.now());
+      return;
+    }
+    setFailedPinAttempt(true);
+    setPinInput('');
+  };
+
+  const unlockWithBiometrics = () => {
+    if (!biometricEnabled) return;
+    setFailedPinAttempt(false);
+    setPinInput('');
+    setShowAccessGate(false);
+    setIsAuthenticated(true);
+    setLastActivityAt(Date.now());
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || !autoLockEnabled) return;
+    if (relockTimer.current) window.clearTimeout(relockTimer.current);
+    relockTimer.current = window.setTimeout(() => lockApp(), autoLockMs);
+    return () => {
+      if (relockTimer.current) window.clearTimeout(relockTimer.current);
+    };
+  }, [isAuthenticated, autoLockEnabled, lastActivityAt, autoLockMs]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const track = () => setLastActivityAt(Date.now());
+    window.addEventListener('pointerdown', track);
+    window.addEventListener('keydown', track);
+    window.addEventListener('touchstart', track);
+    return () => {
+      window.removeEventListener('pointerdown', track);
+      window.removeEventListener('keydown', track);
+      window.removeEventListener('touchstart', track);
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden && isAuthenticated && backgroundLockEnabled) lockApp();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [isAuthenticated, backgroundLockEnabled]);
+
   return (
     <div className="min-h-screen relative">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={view}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.2 }}
-        >
-          {view === 'dashboard' && <Dashboard setView={setView} t={t} />}
-          {view === 'claims' && <ClaimsList setView={setView} t={t} showToast={showToast} />}
-          {view === 'customers' && <Customers setView={setView} t={t} />}
-          {view === 'details' && <DebtDetails setView={setView} t={t} showToast={showToast} />}
-          {view === 'payment' && <PaymentProcess setView={setView} amount={paymentAmount} t={t} />}
-          {view === 'inventory' && <Inventory setView={setView} products={products} setProducts={setProducts} t={t} />}
-          {view === 'sales' && <Sales setView={setView} setPaymentAmount={setPaymentAmount} products={products} t={t} />}
-          {view === 'settings' && <Settings setView={setView} lang={lang} setLang={setLang} t={t} />}
-          {view === 'calculator' && <Calculator setView={setView} t={t} />}
-        </motion.div>
-      </AnimatePresence>
+      {!isAuthenticated ? (
+        showAccessGate ? (
+          <UtilityCalculatorGate onOpenLock={() => setShowAccessGate(false)} />
+        ) : (
+          <LockScreen
+            pinInput={pinInput}
+            setPinInput={setPinInput}
+            onUnlock={unlockWithPin}
+            onBiometricUnlock={unlockWithBiometrics}
+            biometricEnabled={biometricEnabled}
+            failedAttempt={failedPinAttempt}
+            privacyModeEnabled={privacyModeEnabled}
+          />
+        )
+      ) : (
+        <>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={view}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              {view === 'dashboard' && <Dashboard setView={setView} t={t} />}
+              {view === 'claims' && <ClaimsList setView={setView} t={t} showToast={showToast} />}
+              {view === 'customers' && <Customers setView={setView} t={t} />}
+              {view === 'details' && <DebtDetails setView={setView} t={t} showToast={showToast} />}
+              {view === 'payment' && <PaymentProcess setView={setView} amount={paymentAmount} t={t} />}
+              {view === 'inventory' && <Inventory setView={setView} products={products} setProducts={setProducts} t={t} />}
+              {view === 'sales' && <Sales setView={setView} setPaymentAmount={setPaymentAmount} products={products} t={t} />}
+              {view === 'settings' && (
+                <Settings
+                  setView={setView}
+                  lang={lang}
+                  setLang={setLang}
+                  t={t}
+                  biometricEnabled={biometricEnabled}
+                  setBiometricEnabled={setBiometricEnabled}
+                  autoLockEnabled={autoLockEnabled}
+                  setAutoLockEnabled={setAutoLockEnabled}
+                  backgroundLockEnabled={backgroundLockEnabled}
+                  setBackgroundLockEnabled={setBackgroundLockEnabled}
+                  privacyModeEnabled={privacyModeEnabled}
+                  setPrivacyModeEnabled={setPrivacyModeEnabled}
+                  onLockNow={lockApp}
+                />
+              )}
+              {view === 'calculator' && <Calculator setView={setView} t={t} />}
+            </motion.div>
+          </AnimatePresence>
 
-      {['dashboard', 'claims', 'customers', 'inventory', 'settings'].includes(view) && (
-        <BottomNav currentView={view} setView={setView} t={t} />
+          {['dashboard', 'claims', 'customers', 'inventory', 'settings'].includes(view) && (
+            <BottomNav currentView={view} setView={setView} t={t} />
+          )}
+
+          <AnimatePresence>
+            {toast && (
+              <motion.div
+                initial={{ opacity: 0, y: 50 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 50 }}
+                className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-full glass-panel border-primary/30 text-primary font-bold shadow-2xl flex items-center gap-2"
+              >
+                <CheckCircle2 size={20} />
+                {toast}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
       )}
-
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-full glass-panel border-primary/30 text-primary font-bold shadow-2xl flex items-center gap-2"
-          >
-            <CheckCircle2 size={20} />
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
