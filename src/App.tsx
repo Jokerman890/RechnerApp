@@ -42,7 +42,7 @@ import {
   Camera,
   Upload
 } from 'lucide-react';
-import { View, KPI, Activity, Claim, Product, CartItem, Customer } from './types';
+import { View, KPI, Activity, Product, CartItem, Customer, Debt, DebtReminderMode } from './types';
 import { Language, translations } from './translations';
 
 // --- Mock Data ---
@@ -63,12 +63,124 @@ const ACTIVITIES: Activity[] = [
   { id: '2', title: 'Neue Buchung erstellt', subtitle: 'Kunde: Max Mustermann', amount: '450,20€', time: 'Vor 5 Std.', icon: 'plus', color: 'primary' },
 ];
 
-const CLAIMS: Claim[] = [
-  { id: '1', name: 'Lukas Müller', status: 'Kritisch', statusDetail: 'Überfällig', amount: '4.200,00€', overdueDays: 42 },
-  { id: '2', name: 'Sarah Schmidt', status: 'Fällig', statusDetail: 'in 3 Tagen', amount: '1.250,00€' },
-  { id: '3', name: 'Felix Wagner', status: 'Normal', statusDetail: 'Fällig am 24.11.', amount: '850,00€' },
-  { id: '4', name: 'Anna Weber', status: 'Ratenzahlung', statusDetail: '(3/6)', amount: '450,00€' },
+const INITIAL_DEBTS: Debt[] = [
+  {
+    id: 'd-1',
+    name: 'Lukas Müller',
+    originalAmount: 4854.5,
+    phone: '+49 123 456789',
+    dueDate: '2026-03-20',
+    reminderMode: 'daily_after_due',
+    note: 'Rechnung für Material + Lieferung',
+    contactLink: 'https://wa.me/49123456789',
+    payments: [
+      { id: 'p-1', amount: 500, createdAt: '2026-03-15T10:30:00.000Z', note: 'Anzahlung bar' },
+      { id: 'p-2', amount: 154.5, createdAt: '2026-03-21T13:00:00.000Z' },
+    ],
+    createdAt: '2026-03-01T08:00:00.000Z',
+  },
+  {
+    id: 'd-2',
+    name: 'Sarah Schmidt',
+    originalAmount: 1250,
+    dueDate: '2026-03-27',
+    reminderMode: 'due_day',
+    note: 'Offener Verkauf aus Kassenvorgang',
+    payments: [],
+    createdAt: '2026-03-22T09:20:00.000Z',
+  },
+  {
+    id: 'd-3',
+    name: 'Felix Wagner',
+    originalAmount: 850,
+    dueDate: '2026-03-29',
+    reminderMode: '1_day_before',
+    phone: '+49 172 000000',
+    payments: [],
+    createdAt: '2026-03-24T16:00:00.000Z',
+  },
+  {
+    id: 'd-4',
+    name: 'Anna Weber',
+    originalAmount: 450,
+    reminderMode: 'none',
+    payments: [{ id: 'p-4', amount: 450, createdAt: '2026-03-12T10:00:00.000Z' }],
+    createdAt: '2026-03-11T10:00:00.000Z',
+  },
 ];
+
+type DebtComputedStatus = 'offen' | 'bald fällig' | 'heute fällig' | 'überfällig' | 'teilbezahlt' | 'bezahlt';
+type DebtFilter = 'alle' | DebtComputedStatus;
+
+const CURRENCY = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+const DATE_FORMAT = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+const reminderLabels: Record<DebtReminderMode, string> = {
+  none: 'Kein Reminder',
+  due_day: 'Am Fälligkeitstag',
+  '1_day_before': '1 Tag vorher',
+  '3_days_before': '3 Tage vorher',
+  '7_days_before': '7 Tage vorher',
+  daily_after_due: 'Täglich nach Fälligkeit',
+  every_3_days: 'Alle 3 Tage',
+  weekly: 'Wöchentlich',
+  custom_date: 'Eigener Termin',
+};
+
+const normalizeDate = (date?: string) => {
+  if (!date) return null;
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+};
+
+const formatMoney = (amount: number) => CURRENCY.format(Number(amount.toFixed(2)));
+const formatDate = (date?: string) => {
+  const parsed = normalizeDate(date);
+  return parsed ? DATE_FORMAT.format(parsed) : '—';
+};
+
+const getDebtMeta = (debt: Debt, now = new Date()) => {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const paidAmount = Number(debt.payments.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2));
+  const remainingAmount = Number(Math.max(0, debt.originalAmount - paidAmount).toFixed(2));
+  const isPaid = remainingAmount <= 0;
+  const hasPayments = paidAmount > 0;
+  const dueDate = normalizeDate(debt.dueDate);
+  const dueInDays = dueDate ? Math.round((dueDate.getTime() - today.getTime()) / 86400000) : null;
+  const isOverdue = dueInDays !== null && dueInDays < 0;
+  const isDueToday = dueInDays === 0;
+  const isDueSoon = dueInDays !== null && dueInDays > 0 && dueInDays <= 7;
+
+  const urgencyStatus: DebtComputedStatus = isPaid
+    ? 'bezahlt'
+    : isOverdue
+      ? 'überfällig'
+      : isDueToday
+        ? 'heute fällig'
+        : isDueSoon
+          ? 'bald fällig'
+          : 'offen';
+
+  const primaryStatus: DebtComputedStatus = isPaid ? 'bezahlt' : hasPayments ? 'teilbezahlt' : urgencyStatus;
+  const reminderActive = !isPaid && debt.reminderMode !== 'none';
+  const urgencyRank = isPaid ? 99 : isOverdue ? 0 : isDueToday ? 1 : isDueSoon ? 2 : 3;
+
+  return {
+    paidAmount,
+    remainingAmount,
+    dueInDays,
+    dueDate,
+    isPaid,
+    hasPayments,
+    urgencyStatus,
+    primaryStatus,
+    reminderActive,
+    urgencyRank,
+  };
+};
 
 const PRODUCTS: Product[] = [
   { id: '1', name: 'Aura Watch S2', location: 'Regal A1', units: 12, status: 'WENIG', image: 'https://picsum.photos/seed/watch/200' },
@@ -224,192 +336,317 @@ const Dashboard = ({ setView, t }: { setView: (v: View) => void, t: any }) => (
   </div>
 );
 
-const ClaimsList = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => (
-  <div className="flex flex-col gap-8 pb-32">
-    <header className="sticky top-0 z-50 glass-panel border-b px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/15 overflow-hidden">
-          <img src="https://picsum.photos/seed/user/100" alt="Benutzer" className="w-full h-full object-cover" />
-        </div>
-        <h1 className="text-xl font-bold tracking-tight">{t.claims}</h1>
-      </div>
-      <button className="w-10 h-10 rounded-full glass-panel flex items-center justify-center">
-        <Bell size={20} />
-      </button>
-    </header>
+const ClaimsList = ({
+  setView,
+  debts,
+  setSelectedDebtId,
+  addDebt,
+  updateReminder,
+  showToast,
+}: {
+  setView: (v: View) => void;
+  debts: Debt[];
+  setSelectedDebtId: (id: string) => void;
+  addDebt: (payload: Omit<Debt, 'id' | 'createdAt' | 'payments'>) => void;
+  updateReminder: (debtId: string, mode: DebtReminderMode, reminderDate?: string) => void;
+  showToast: (m: string) => void;
+}) => {
+  const [filter, setFilter] = useState<DebtFilter>('alle');
+  const [isAdding, setIsAdding] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    amount: '',
+    phone: '',
+    dueDate: '',
+    reminderMode: 'none' as DebtReminderMode,
+    note: '',
+    contactLink: '',
+  });
 
-    <main className="px-6 flex flex-col gap-10">
-      <section className="bg-surface-container-low rounded-xl p-8 border border-outline-variant/15 relative overflow-hidden">
-        <div className="absolute -top-24 -right-24 w-64 h-64 bg-primary/10 rounded-full blur-[80px]" />
-        <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
-          <div className="text-center md:text-left">
-            <p className="text-on-surface-variant text-sm font-medium uppercase tracking-widest mb-2">{t.total_overview}</p>
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tighter">12.450,00€</h2>
-          </div>
-          <div className="w-full md:w-1/2 space-y-4">
-            <div className="flex justify-between items-end">
-              <span className="font-medium text-lg">{t.repayment_rate}</span>
-              <span className="text-tertiary font-bold text-xl">65%</span>
-            </div>
-            <div className="h-4 bg-surface-container-highest rounded-full overflow-hidden border border-outline-variant/15 relative">
-              <div className="absolute top-0 left-0 h-full liquid-gradient rounded-full w-[65%]" />
-            </div>
-            <div className="flex justify-between text-sm text-on-surface-variant">
-              <span>8.092,50€ {t.received}</span>
-              <span>4.357,50€ {t.pending}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+  const debtRows = debts
+    .map((debt) => ({ debt, meta: getDebtMeta(debt) }))
+    .sort((a, b) => {
+      if (a.meta.urgencyRank !== b.meta.urgencyRank) return a.meta.urgencyRank - b.meta.urgencyRank;
+      if (a.meta.dueDate && b.meta.dueDate) return a.meta.dueDate.getTime() - b.meta.dueDate.getTime();
+      if (a.meta.dueDate && !b.meta.dueDate) return -1;
+      if (!a.meta.dueDate && b.meta.dueDate) return 1;
+      return a.debt.name.localeCompare(b.debt.name, 'de');
+    });
 
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-outline-variant/15 pb-4">
-          <h3 className="text-2xl font-bold">{t.open_claims}</h3>
-          <button className="px-4 py-2 rounded-full glass-panel text-sm font-medium flex items-center gap-2">
-            <Search size={16} /> {t.filter}
-          </button>
-        </div>
-        <div className="flex flex-col gap-4">
-          {CLAIMS.map((claim) => (
-            <div 
-              key={claim.id} 
-              onClick={() => setView('details')}
-              className="bg-surface-container rounded-lg p-5 border border-outline-variant/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors"
+  const filteredRows = debtRows.filter(({ meta }) => filter === 'alle' || meta.primaryStatus === filter || meta.urgencyStatus === filter);
+  const totalRemaining = debtRows.reduce((sum, row) => sum + row.meta.remainingAmount, 0);
+  const openCount = debtRows.filter(({ meta }) => !meta.isPaid).length;
+
+  const statusChip = (status: DebtComputedStatus) => {
+    if (status === 'überfällig') return 'bg-error/20 text-error';
+    if (status === 'heute fällig') return 'bg-secondary/25 text-secondary';
+    if (status === 'bald fällig') return 'bg-tertiary/20 text-tertiary';
+    if (status === 'teilbezahlt') return 'bg-primary/20 text-primary';
+    if (status === 'bezahlt') return 'bg-surface-container-highest text-on-surface-variant';
+    return 'bg-surface-container-highest text-on-surface';
+  };
+
+  const quickReminder = (debtId: string, days: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    updateReminder(debtId, 'custom_date', date.toISOString().slice(0, 10));
+    showToast(`Erinnerung gesetzt: ${DATE_FORMAT.format(date)}`);
+  };
+
+  const submit = () => {
+    const amount = Number(form.amount.replace(',', '.'));
+    if (!form.name.trim() || !Number.isFinite(amount) || amount <= 0) {
+      showToast('Name und gültiger Betrag sind Pflicht.');
+      return;
+    }
+    addDebt({
+      name: form.name.trim(),
+      originalAmount: amount,
+      phone: form.phone.trim() || undefined,
+      dueDate: form.dueDate || undefined,
+      reminderMode: form.reminderMode,
+      reminderDate: form.reminderMode === 'custom_date' ? form.dueDate || undefined : undefined,
+      note: form.note.trim() || undefined,
+      contactLink: form.contactLink.trim() || undefined,
+    });
+    setForm({ name: '', amount: '', phone: '', dueDate: '', reminderMode: 'none', note: '', contactLink: '' });
+    setIsAdding(false);
+    showToast('Schuld angelegt.');
+  };
+
+  return (
+    <div className="flex flex-col gap-5 pb-32">
+      <header className="sticky top-0 z-50 glass-panel border-b px-5 py-4 flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight">Schulden</h1>
+        <button onClick={() => setIsAdding(true)} className="size-10 rounded-full liquid-gradient flex items-center justify-center shadow-lg">
+          <Plus size={20} />
+        </button>
+      </header>
+
+      <main className="px-4 flex flex-col gap-5">
+        <section className="glass-card rounded-2xl p-5 border border-outline-variant/15">
+          <p className="text-[10px] uppercase tracking-widest text-on-surface-variant font-extrabold mb-1">Offener Restbetrag</p>
+          <p className="text-3xl font-bold tracking-tight">{formatMoney(totalRemaining)}</p>
+          <p className="text-xs text-on-surface-variant mt-2">{openCount} aktive Schulden</p>
+        </section>
+
+        <section className="flex gap-2 overflow-x-auto pb-1">
+          {(['alle', 'überfällig', 'heute fällig', 'bald fällig', 'offen', 'teilbezahlt', 'bezahlt'] as DebtFilter[]).map((item) => (
+            <button
+              key={item}
+              onClick={() => setFilter(item)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold ${filter === item ? 'liquid-gradient' : 'glass-panel'}`}
             >
-              <div className={`absolute left-0 top-0 bottom-0 w-1 ${claim.status === 'Kritisch' ? 'bg-error' : claim.status === 'Fällig' ? 'bg-tertiary' : 'bg-outline-variant'}`} />
-              <div className="flex items-center gap-4 pl-2">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${claim.status === 'Kritisch' ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                  {claim.status === 'Kritisch' ? <Receipt size={24} /> : <Users size={24} />}
-                </div>
+              {item}
+            </button>
+          ))}
+        </section>
+
+        <section className="flex flex-col gap-3">
+          {filteredRows.map(({ debt, meta }) => (
+            <button
+              key={debt.id}
+              onClick={() => {
+                setSelectedDebtId(debt.id);
+                setView('details');
+              }}
+              className="text-left glass-card rounded-xl p-4 border border-outline-variant/15 hover:bg-surface-container-high transition-colors"
+            >
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h4 className="text-lg font-bold">{claim.name}</h4>
-                  <div className="flex items-center gap-2 text-sm mt-1">
-                    <span className={`font-medium px-2 py-0.5 rounded-sm ${claim.status === 'Kritisch' ? 'bg-error/20 text-error' : claim.status === 'Fällig' ? 'bg-tertiary/20 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                      {claim.status} {claim.statusDetail}
-                    </span>
-                    {claim.overdueDays && <span className="text-on-surface-variant text-xs">• seit {claim.overdueDays} Tagen</span>}
+                  <p className="font-semibold">{debt.name}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusChip(meta.urgencyStatus)}`}>{meta.urgencyStatus}</span>
+                    {meta.hasPayments && !meta.isPaid && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusChip('teilbezahlt')}`}>teilbezahlt</span>}
+                    {meta.reminderActive && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/20 text-primary">Reminder aktiv</span>}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
                 <div className="text-right">
-                  <p className="text-xl font-bold">{claim.amount}</p>
-                  <p className="text-xs text-on-surface-variant uppercase tracking-wider mt-1">{t.pending}</p>
+                  <p className="text-xl font-bold leading-tight">{formatMoney(meta.remainingAmount)}</p>
+                  <p className="text-[10px] uppercase tracking-widest text-on-surface-variant mt-1">Restbetrag</p>
                 </div>
-                {claim.status === 'Kritisch' || claim.status === 'Fällig' ? (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      showToast(t.reminder_sent);
-                    }}
-                    className="liquid-gradient px-6 py-2.5 rounded-full font-bold text-sm shadow-lg active:scale-95 transition-transform"
-                  >
-                    {t.send_reminder}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-on-surface-variant">
+                <span>Fällig: {formatDate(debt.dueDate)}</span>
+                {meta.reminderActive ? <Bell size={14} /> : <EyeOff size={14} />}
+              </div>
+              {meta.urgencyStatus !== 'bezahlt' && (
+                <div className="mt-3 flex gap-2">
+                  <button onClick={(e) => { e.stopPropagation(); quickReminder(debt.id, 1); }} className="px-3 py-1 rounded-full bg-surface-container text-xs">
+                    Morgen erinnern
                   </button>
-                ) : (
-                  <button className="glass-panel px-6 py-2.5 rounded-full font-bold text-sm">{t.details}</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
-  </div>
-);
-
-const DebtDetails = ({ setView, t, showToast }: { setView: (v: View) => void, t: any, showToast: (m: string) => void }) => (
-  <div className="flex flex-col min-h-screen relative overflow-x-hidden">
-    <div className="fixed inset-0 pointer-events-none z-0">
-      <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-primary/10 blur-[120px] opacity-20" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-secondary/10 blur-[120px] opacity-10" />
-    </div>
-
-    <header className="relative z-10 flex items-center justify-between p-6">
-      <button onClick={() => setView('claims')} className="w-12 h-12 rounded-full glass-panel flex items-center justify-center hover:bg-surface-container transition-all">
-        <ArrowLeft size={24} />
-      </button>
-      <div className="flex-1 flex justify-center">
-        <div className="font-bold text-xl tracking-tighter opacity-60">LiquidGlass</div>
-      </div>
-      <button className="w-12 h-12 rounded-full glass-panel flex items-center justify-center hover:bg-surface-container transition-all">
-        <MoreVertical size={24} />
-      </button>
-    </header>
-
-    <main className="relative z-10 px-6 pb-32 flex flex-col gap-8">
-      <section className="flex flex-col items-center pt-4 pb-8">
-        <div className="w-32 h-32 rounded-full overflow-hidden mb-6 glass-panel p-1">
-          <img src="https://picsum.photos/seed/lukas/300" alt="Lukas" className="w-full h-full object-cover rounded-full" />
-        </div>
-        <h1 className="text-4xl font-bold tracking-tight mb-2">Lukas Müller</h1>
-        <span className="px-4 py-1.5 rounded-full bg-error/20 text-error text-xs font-extrabold uppercase tracking-wider mb-8">{t.critical}</span>
-        
-        <p className="text-[3.5rem] font-bold tracking-tighter leading-none mb-8">
-          4.200,00 <span className="text-on-surface-variant text-[2rem]">€</span>
-        </p>
-
-        <div className="w-full max-w-sm glass-panel p-4 rounded-xl">
-          <div className="flex justify-between items-end mb-3">
-            <span className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-wider">{t.paid}</span>
-            <div className="text-right">
-              <span className="text-lg font-bold block leading-tight">654,50 €</span>
-              <span className="text-xs text-outline block">{t.of} 4.854,50 €</span>
-            </div>
-          </div>
-          <div className="h-3 w-full bg-surface-container-highest rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full liquid-gradient rounded-full" style={{ width: '13.5%' }}>
-              <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent rounded-full h-[40%]" />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-6">
-        <h2 className="text-xl font-medium px-2">{t.payment_history}</h2>
-        <div className="relative flex flex-col gap-4 pl-4 before:content-[''] before:absolute before:left-8 before:top-4 before:bottom-4 before:w-[1px] before:bg-outline-variant/30">
-          {[
-            { title: t.travel_expenses_booked, amount: '+ 45,50 €', date: '12. Okt 2023', icon: Car, color: 'primary', isNegative: false },
-            { title: t.partial_payment_cash, amount: '- 200,00 €', date: '10. Okt 2023', icon: Euro, color: 'secondary', isNegative: true },
-            { title: t.partial_payment_card, amount: '- 500,00 €', date: '01. Okt 2023', icon: Receipt, color: 'secondary', isNegative: true },
-          ].map((item, i) => (
-            <div key={i} className="relative flex gap-6 items-start">
-              <div className="relative z-10 flex-shrink-0 w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant/30 flex items-center justify-center mt-2">
-                <item.icon size={14} className={`text-${item.color}`} />
-              </div>
-              <div className="flex-1 glass-panel rounded-lg p-5 hover:bg-white/5 transition-colors cursor-pointer">
-                <div className="flex justify-between items-start mb-1">
-                  <h3 className="font-bold">{item.title}</h3>
-                  <span className={`font-bold ${item.isNegative ? 'text-tertiary' : 'text-error'}`}>{item.amount}</span>
+                  <button onClick={(e) => { e.stopPropagation(); quickReminder(debt.id, 3); }} className="px-3 py-1 rounded-full bg-surface-container text-xs">
+                    In 3 Tagen
+                  </button>
                 </div>
-                <div className="flex items-center gap-2 text-on-surface-variant text-xs">
-                  <Timer size={12} /> {item.date}
-                </div>
-              </div>
-            </div>
+              )}
+            </button>
           ))}
-        </div>
-      </section>
-    </main>
+        </section>
+      </main>
 
-    <div className="fixed bottom-0 left-0 w-full p-6 pt-10 bg-gradient-to-t from-surface via-surface/90 to-transparent z-50">
-      <div className="max-w-2xl mx-auto flex flex-col gap-4">
-        <button 
-          onClick={() => setView('payment')}
-          className="w-full h-16 rounded-full liquid-gradient font-bold text-lg flex items-center justify-center gap-3 shadow-xl hover:scale-[1.02] transition-transform"
-        >
-          <PlusSquare size={24} /> {t.add_payment}
-        </button>
-        <button 
-          onClick={() => showToast(t.reminder_sent)}
-          className="w-full h-14 rounded-full glass-panel font-medium flex items-center justify-center gap-2 hover:bg-surface-variant/60 transition-all"
-        >
-          <Bell size={20} /> {t.send_reminder}
-        </button>
-      </div>
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[120] bg-background/85 backdrop-blur-xl p-4 flex items-end sm:items-center justify-center">
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="w-full max-w-lg glass-panel rounded-3xl p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold">Neue Schuld</h2>
+                <button onClick={() => setIsAdding(false)} className="size-10 rounded-full glass-panel flex items-center justify-center"><X size={18} /></button>
+              </div>
+              <input value={form.name} onChange={(e) => setForm((v) => ({ ...v, name: e.target.value }))} className="h-12 rounded-xl bg-surface-container-low px-4" placeholder="Name *" />
+              <input value={form.amount} onChange={(e) => setForm((v) => ({ ...v, amount: e.target.value }))} className="h-12 rounded-xl bg-surface-container-low px-4" placeholder="Betrag *" inputMode="decimal" />
+              <input value={form.phone} onChange={(e) => setForm((v) => ({ ...v, phone: e.target.value }))} className="h-12 rounded-xl bg-surface-container-low px-4" placeholder="Telefonnummer (optional)" />
+              <input type="date" value={form.dueDate} onChange={(e) => setForm((v) => ({ ...v, dueDate: e.target.value }))} className="h-12 rounded-xl bg-surface-container-low px-4" />
+              <select value={form.reminderMode} onChange={(e) => setForm((v) => ({ ...v, reminderMode: e.target.value as DebtReminderMode }))} className="h-12 rounded-xl bg-surface-container-low px-4">
+                {Object.entries(reminderLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+              <input value={form.contactLink} onChange={(e) => setForm((v) => ({ ...v, contactLink: e.target.value }))} className="h-12 rounded-xl bg-surface-container-low px-4" placeholder="Kontakt-Link (optional)" />
+              <textarea value={form.note} onChange={(e) => setForm((v) => ({ ...v, note: e.target.value }))} className="rounded-xl bg-surface-container-low px-4 py-3 min-h-20" placeholder="Notiz (optional)" />
+              <button onClick={submit} className="h-12 rounded-full liquid-gradient font-bold">Schuld speichern</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  </div>
-);
+  );
+};
+
+const DebtDetails = ({
+  setView,
+  debt,
+  addPayment,
+  markAsPaid,
+  updateReminder,
+  showToast,
+}: {
+  setView: (v: View) => void;
+  debt: Debt | null;
+  addPayment: (debtId: string, amount: number, note?: string) => { ok: boolean; message: string };
+  markAsPaid: (debtId: string) => void;
+  updateReminder: (debtId: string, mode: DebtReminderMode, reminderDate?: string) => void;
+  showToast: (m: string) => void;
+}) => {
+  const [openPayment, setOpenPayment] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
+  if (!debt) return null;
+
+  const meta = getDebtMeta(debt);
+  const paidPercent = Math.min(100, (meta.paidAmount / debt.originalAmount) * 100);
+
+  const setQuickReminder = (days: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    updateReminder(debt.id, 'custom_date', date.toISOString().slice(0, 10));
+    showToast(`Erinnerung gesetzt: ${DATE_FORMAT.format(date)}`);
+  };
+
+  const savePayment = () => {
+    const amount = Number(paymentAmount.replace(',', '.'));
+    const result = addPayment(debt.id, amount, paymentNote);
+    showToast(result.message);
+    if (result.ok) {
+      setOpenPayment(false);
+      setPaymentAmount('');
+      setPaymentNote('');
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen relative overflow-x-hidden">
+      <header className="sticky top-0 z-40 px-5 py-4 glass-panel border-b border-outline-variant/20 flex items-center justify-between">
+        <button onClick={() => setView('claims')} className="size-10 rounded-full glass-panel flex items-center justify-center"><ArrowLeft size={20} /></button>
+        <h1 className="font-bold">{debt.name}</h1>
+        <button className="size-10 rounded-full glass-panel flex items-center justify-center"><MoreVertical size={18} /></button>
+      </header>
+
+      <main className="px-5 pb-40 pt-5 flex flex-col gap-5">
+        <section className="glass-card rounded-2xl p-6 border border-outline-variant/15">
+          <p className="text-[10px] uppercase tracking-widest text-on-surface-variant font-extrabold">Restbetrag</p>
+          <p className="text-5xl font-bold tracking-tight mt-2">{formatMoney(meta.remainingAmount)}</p>
+          <div className="mt-4 h-2 rounded-full bg-surface-container-highest overflow-hidden">
+            <div className="h-full liquid-gradient" style={{ width: `${paidPercent}%` }} />
+          </div>
+          <p className="text-xs text-on-surface-variant mt-2">Bezahlt: {formatMoney(meta.paidAmount)} von {formatMoney(debt.originalAmount)}</p>
+        </section>
+
+        <section className="glass-panel rounded-2xl p-4 text-sm space-y-3">
+          <div className="flex justify-between"><span className="text-on-surface-variant">Status</span><span className="font-semibold">{meta.primaryStatus}</span></div>
+          <div className="flex justify-between"><span className="text-on-surface-variant">Fälligkeit</span><span className="font-semibold">{formatDate(debt.dueDate)}</span></div>
+          <div className="flex justify-between"><span className="text-on-surface-variant">Reminder</span><span className="font-semibold">{meta.isPaid ? 'Inaktiv (bezahlt)' : reminderLabels[debt.reminderMode]}</span></div>
+          {debt.phone && <div className="flex justify-between"><span className="text-on-surface-variant">Telefon</span><span className="font-semibold">{debt.phone}</span></div>}
+          {debt.note && <div><p className="text-on-surface-variant mb-1">Notiz</p><p className="text-sm">{debt.note}</p></div>}
+        </section>
+
+        <section className="glass-panel rounded-2xl p-4">
+          <h2 className="font-semibold mb-3">Reminder</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {(['due_day', '1_day_before', '3_days_before', '7_days_before', 'daily_after_due', 'every_3_days', 'weekly'] as DebtReminderMode[]).map((mode) => (
+              <button key={mode} disabled={meta.isPaid} onClick={() => updateReminder(debt.id, mode)} className={`px-3 py-2 text-xs rounded-xl ${debt.reminderMode === mode ? 'bg-primary/25 text-primary' : 'bg-surface-container'}`}>
+                {reminderLabels[mode]}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button disabled={meta.isPaid} onClick={() => setQuickReminder(1)} className="flex-1 px-3 py-2 text-xs rounded-xl bg-surface-container">Morgen</button>
+            <button disabled={meta.isPaid} onClick={() => setQuickReminder(3)} className="flex-1 px-3 py-2 text-xs rounded-xl bg-surface-container">In 3 Tagen</button>
+            <button disabled={meta.isPaid} onClick={() => setQuickReminder(7)} className="flex-1 px-3 py-2 text-xs rounded-xl bg-surface-container">Nächste Woche</button>
+          </div>
+        </section>
+
+        <section className="glass-panel rounded-2xl p-4">
+          <h2 className="font-semibold mb-3">Zahlungsverlauf</h2>
+          <div className="space-y-2">
+            {debt.payments.length === 0 && <p className="text-sm text-on-surface-variant">Noch keine Zahlungen erfasst.</p>}
+            {[...debt.payments].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((payment) => (
+              <div key={payment.id} className="rounded-xl bg-surface-container p-3 flex items-center justify-between">
+                <div>
+                  <p className="font-medium">{formatMoney(payment.amount)}</p>
+                  <p className="text-xs text-on-surface-variant">{DATE_FORMAT.format(new Date(payment.createdAt))}</p>
+                  {payment.note && <p className="text-xs mt-1 text-on-surface-variant">{payment.note}</p>}
+                </div>
+                <Euro size={16} className="text-primary" />
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+
+      <div className="fixed bottom-0 left-0 right-0 z-50 p-5 pt-8 bg-gradient-to-t from-surface via-surface/95 to-transparent">
+        <div className="flex flex-col gap-3">
+          <button onClick={() => setOpenPayment(true)} disabled={meta.isPaid} className="h-14 rounded-full liquid-gradient font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+            <PlusSquare size={18} /> Zahlung hinzufügen
+          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => { markAsPaid(debt.id); showToast('Als bezahlt markiert.'); }} disabled={meta.isPaid} className="h-11 rounded-full glass-panel text-sm disabled:opacity-50">Als bezahlt markieren</button>
+            {debt.phone ? (
+              <a href={`tel:${debt.phone}`} className="h-11 rounded-full glass-panel text-sm flex items-center justify-center gap-2"><Smartphone size={16} />Anrufen</a>
+            ) : (
+              <button disabled className="h-11 rounded-full glass-panel text-sm opacity-40">Kein Telefon</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {openPayment && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[120] bg-background/80 backdrop-blur-xl p-4 flex items-end sm:items-center justify-center">
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="w-full max-w-md glass-panel rounded-3xl p-6 flex flex-col gap-4">
+              <h3 className="text-xl font-bold">Teilzahlung erfassen</h3>
+              <p className="text-sm text-on-surface-variant">Offen vorher: {formatMoney(meta.remainingAmount)}</p>
+              <input value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} className="h-12 rounded-xl bg-surface-container-low px-4" placeholder="Betrag" inputMode="decimal" />
+              <textarea value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} className="rounded-xl bg-surface-container-low px-4 py-3 min-h-20" placeholder="Notiz (optional)" />
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setOpenPayment(false)} className="h-11 rounded-full glass-panel">Abbrechen</button>
+                <button onClick={savePayment} className="h-11 rounded-full liquid-gradient font-bold">Speichern</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 const PaymentProcess = ({ setView, amount, t }: { setView: (v: View) => void, amount: number, t: any }) => (
   <div className="fixed inset-0 z-[100] bg-background flex flex-col items-center justify-center overflow-hidden">
@@ -1246,6 +1483,8 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [debts, setDebts] = useState<Debt[]>(INITIAL_DEBTS);
+  const [selectedDebtId, setSelectedDebtId] = useState<string>(INITIAL_DEBTS[0]?.id ?? '');
   const [lang, setLang] = useState<Language>('de');
   const [toast, setToast] = useState<string | null>(null);
 
@@ -1255,6 +1494,73 @@ export default function App() {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
+
+  const addDebt = (payload: Omit<Debt, 'id' | 'createdAt' | 'payments'>) => {
+    const newDebt: Debt = {
+      ...payload,
+      id: `d-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      payments: [],
+    };
+    setDebts((prev) => [newDebt, ...prev]);
+    setSelectedDebtId(newDebt.id);
+  };
+
+  const addPaymentToDebt = (debtId: string, amount: number, note?: string) => {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { ok: false, message: 'Bitte einen gültigen Betrag eingeben.' };
+    }
+
+    const target = debts.find((debt) => debt.id === debtId);
+    if (!target) return { ok: false, message: 'Schuld nicht gefunden.' };
+    const meta = getDebtMeta(target);
+    if (amount > meta.remainingAmount) return { ok: false, message: 'Überzahlung ist nicht erlaubt.' };
+
+    setDebts((prev) =>
+      prev.map((debt) => {
+        if (debt.id !== debtId) return debt;
+        const nextPayments = [...debt.payments, { id: `p-${Date.now()}`, amount: Number(amount.toFixed(2)), note: note?.trim() || undefined, createdAt: new Date().toISOString() }];
+        const paidAfter = nextPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        const isFullyPaid = paidAfter >= debt.originalAmount;
+        return {
+          ...debt,
+          payments: nextPayments,
+          reminderMode: isFullyPaid ? 'none' : debt.reminderMode,
+          reminderDate: isFullyPaid ? undefined : debt.reminderDate,
+        };
+      }),
+    );
+    return { ok: true, message: 'Zahlung gespeichert.' };
+  };
+
+  const markDebtAsPaid = (debtId: string) => {
+    setDebts((prev) =>
+      prev.map((debt) => {
+        if (debt.id !== debtId) return debt;
+        const meta = getDebtMeta(debt);
+        if (meta.remainingAmount <= 0) return debt;
+        return {
+          ...debt,
+          payments: [...debt.payments, { id: `p-${Date.now()}`, amount: meta.remainingAmount, createdAt: new Date().toISOString(), note: 'Als bezahlt markiert' }],
+          reminderMode: 'none',
+          reminderDate: undefined,
+        };
+      }),
+    );
+  };
+
+  const updateReminder = (debtId: string, mode: DebtReminderMode, reminderDate?: string) => {
+    setDebts((prev) =>
+      prev.map((debt) => {
+        if (debt.id !== debtId) return debt;
+        const meta = getDebtMeta(debt);
+        if (meta.isPaid) return { ...debt, reminderMode: 'none', reminderDate: undefined };
+        return { ...debt, reminderMode: mode, reminderDate: mode === 'custom_date' ? reminderDate : undefined };
+      }),
+    );
+  };
+
+  const selectedDebt = debts.find((debt) => debt.id === selectedDebtId) ?? debts[0] ?? null;
 
   return (
     <div className="min-h-screen relative">
@@ -1267,9 +1573,27 @@ export default function App() {
           transition={{ duration: 0.2 }}
         >
           {view === 'dashboard' && <Dashboard setView={setView} t={t} />}
-          {view === 'claims' && <ClaimsList setView={setView} t={t} showToast={showToast} />}
+          {view === 'claims' && (
+            <ClaimsList
+              setView={setView}
+              debts={debts}
+              setSelectedDebtId={setSelectedDebtId}
+              addDebt={addDebt}
+              updateReminder={updateReminder}
+              showToast={showToast}
+            />
+          )}
           {view === 'customers' && <Customers setView={setView} t={t} />}
-          {view === 'details' && <DebtDetails setView={setView} t={t} showToast={showToast} />}
+          {view === 'details' && (
+            <DebtDetails
+              setView={setView}
+              debt={selectedDebt}
+              addPayment={addPaymentToDebt}
+              markAsPaid={markDebtAsPaid}
+              updateReminder={updateReminder}
+              showToast={showToast}
+            />
+          )}
           {view === 'payment' && <PaymentProcess setView={setView} amount={paymentAmount} t={t} />}
           {view === 'inventory' && <Inventory setView={setView} products={products} setProducts={setProducts} t={t} />}
           {view === 'sales' && <Sales setView={setView} setPaymentAmount={setPaymentAmount} products={products} t={t} />}

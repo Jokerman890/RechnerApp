@@ -38,6 +38,38 @@ export interface Claim {
   dueDate?: string;
 }
 
+export type DebtReminderMode =
+  | 'none'
+  | 'due_day'
+  | '1_day_before'
+  | '3_days_before'
+  | '7_days_before'
+  | 'daily_after_due'
+  | 'every_3_days'
+  | 'weekly'
+  | 'custom_date';
+
+export interface DebtPayment {
+  id: string;
+  amount: number;
+  createdAt: string;
+  note?: string;
+}
+
+export interface Debt {
+  id: string;
+  name: string;
+  originalAmount: number;
+  phone?: string;
+  dueDate?: string;
+  reminderMode: DebtReminderMode;
+  reminderDate?: string;
+  note?: string;
+  contactLink?: string;
+  payments: DebtPayment[];
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
